@@ -210,6 +210,7 @@ export const bnIN = {
     transformations: "ট্রান্সফরমেশনস",
     transformation: "ট্রান্সফরমেশন",
     settings: "সেটিংস",
+    integrations: "ইন্টিগ্রেশন",
     advanced: "উন্নত",
     nav: "নেভিগেশন",
     language: "ভাষা টগল",

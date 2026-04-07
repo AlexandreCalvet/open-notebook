@@ -210,6 +210,7 @@ export const itIT = {
     transformations: "Trasformazioni",
     transformation: "Trasformazione",
     settings: "Impostazioni",
+    integrations: "Integrazioni",
     advanced: "Avanzate",
     nav: "Navigazione",
     language: "Cambia lingua",

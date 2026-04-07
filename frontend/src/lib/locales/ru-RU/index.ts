@@ -210,6 +210,7 @@ export const ruRU = {
     transformations: "Трансформации",
     transformation: "Трансформация",
     settings: "Настройки",
+    integrations: "Интеграции",
     advanced: "Дополнительно",
     nav: "Навигация",
     language: "Переключить язык",

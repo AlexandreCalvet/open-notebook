@@ -210,6 +210,7 @@ export const jaJP = {
     transformations: "トランスフォーメーション",
     transformation: "トランスフォーメーション",
     settings: "設定",
+    integrations: "連携",
     advanced: "詳細設定",
     nav: "ナビゲーション",
     language: "言語を切り替え",

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -109,10 +110,26 @@ async def lifespan(app: FastAPI):
 
     logger.success("API initialization completed successfully")
 
+    # Google Drive integration (optional — only active when GOOGLE_DRIVE_CLIENT_ID is set)
+    if os.environ.get("GOOGLE_DRIVE_CLIENT_ID"):
+        try:
+            from integrations.google_drive import init_drive_schema, start_drive_scheduler
+            await init_drive_schema()
+            start_drive_scheduler()
+            logger.success("Google Drive integration started")
+        except Exception as e:
+            logger.warning(f"Google Drive integration failed to start (non-fatal): {e}")
+
     # Yield control to the application
     yield
 
     # Shutdown: cleanup if needed
+    if os.environ.get("GOOGLE_DRIVE_CLIENT_ID"):
+        try:
+            from integrations.google_drive import stop_drive_scheduler
+            stop_drive_scheduler()
+        except Exception:
+            pass
     logger.info("API shutdown complete")
 
 
@@ -280,6 +297,17 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(source_chat.router, prefix="/api", tags=["source-chat"])
 app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
+
+# Google Drive integration router (optional — registered only when env var is set)
+if os.environ.get("GOOGLE_DRIVE_CLIENT_ID"):
+    try:
+        from integrations.google_drive import router as _drive_router
+        app.include_router(_drive_router, prefix="/api", tags=["google-drive"])
+        logger.info("Google Drive router registered")
+    except ImportError as e:
+        logger.warning(
+            f"Google Drive router not available (install google-drive extras): {e}"
+        )
 
 
 @app.get("/")

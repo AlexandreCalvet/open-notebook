@@ -210,6 +210,7 @@ export const zhCN = {
     transformations: "转换",
     transformation: "转换",
     settings: "设置",
+    integrations: "集成",
     advanced: "高级",
     nav: "导航",
     language: "切换语言",
