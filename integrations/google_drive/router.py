@@ -93,8 +93,9 @@ async def disconnect_drive():
 @router.get("/picker-config")
 async def get_picker_config():
     """
-    Return a fresh OAuth access token and the GCP app ID so the frontend
-    can open the native Google Picker. No extra API key needed.
+    Return everything the frontend needs to open the full Google Picker.
+    The API key (GOOGLE_DRIVE_API_KEY) is required for the rich Picker UI;
+    without it Google falls back to a degraded view with raw folder IDs.
     """
     cred = await drive_service.get_credential()
     if not cred:
@@ -106,10 +107,14 @@ async def get_picker_config():
 
     client_id = os.environ["GOOGLE_DRIVE_CLIENT_ID"]
     app_id = client_id.split("-")[0] if "-" in client_id else ""
+    api_key = os.environ.get("GOOGLE_DRIVE_API_KEY", "")
+    origin = os.environ.get("FRONTEND_URL", "")
 
     return {
         "access_token": token,
+        "api_key": api_key,
         "app_id": app_id,
+        "origin": origin,
     }
 
 
