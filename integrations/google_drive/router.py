@@ -148,7 +148,7 @@ async def import_files(data: ImportFilesRequest):
                 mime_type=file_info["mimeType"],
             )
 
-            source_record = await repo_create(
+            source_result = await repo_create(
                 "source",
                 {
                     "title": file_info["name"],
@@ -157,6 +157,7 @@ async def import_files(data: ImportFilesRequest):
                     "drive_modified_time": file_info.get("modifiedTime", ""),
                 },
             )
+            source_record = source_result[0] if isinstance(source_result, list) else source_result
             source_id = source_record["id"]
 
             await repo_relate(
@@ -207,7 +208,7 @@ async def create_sync(data: DriveSyncCreate):
             detail="This folder is already synced to this notebook",
         )
 
-    record = await repo_create(
+    result = await repo_create(
         "drive_sync",
         {
             "notebook_id": notebook_rid,
@@ -217,6 +218,7 @@ async def create_sync(data: DriveSyncCreate):
             "enabled": True,
         },
     )
+    record = result[0] if isinstance(result, list) else result
     return DriveSyncResponse(**record)
 
 
