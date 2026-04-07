@@ -18,6 +18,18 @@ from open_notebook.database.repository import (
 from integrations.google_drive import service as drive_service
 
 
+async def _ensure_notebook_reference(source_id: str, notebook_id: str) -> None:
+    """Create source->notebook relation if missing."""
+    sid = ensure_record_id(source_id)
+    nid = ensure_record_id(notebook_id)
+    existing_ref = await repo_query(
+        "SELECT * FROM reference WHERE in = $sid AND out = $nid LIMIT 1",
+        {"sid": sid, "nid": nid},
+    )
+    if not existing_ref:
+        await repo_relate(sid, "reference", nid)
+
+
 async def sync_all() -> None:
     """
     Main polling entry point. Called by the APScheduler every N minutes.
@@ -83,12 +95,13 @@ async def _process_file(file: dict, notebook_id: str) -> None:
     drive_modified_time = file["modifiedTime"]
 
     existing = await repo_query(
-        "SELECT * FROM source WHERE drive_file_id = $fid LIMIT 1",
+        "SELECT * FROM source WHERE drive_file_id = $fid",
         {"fid": drive_file_id},
     )
 
     if existing:
         source_data = existing[0]
+        await _ensure_notebook_reference(str(source_data["id"]), notebook_id)
         existing_modified = source_data.get("drive_modified_time")
         if existing_modified == drive_modified_time:
             logger.debug(f"Drive file {drive_file_id} unchanged, skipping")
@@ -138,6 +151,19 @@ async def _create_source(file: dict, notebook_id: str) -> None:
     from surreal_commands import submit_command
     from commands.source_commands import SourceProcessingInput
 
+    # Double-check before creating to avoid duplicates in race conditions.
+    existing = await repo_query(
+        "SELECT * FROM source WHERE drive_file_id = $fid LIMIT 1",
+        {"fid": file["id"]},
+    )
+    if existing:
+        existing_source = existing[0]
+        await _ensure_notebook_reference(str(existing_source["id"]), notebook_id)
+        existing_modified = existing_source.get("drive_modified_time")
+        if existing_modified != file["modifiedTime"]:
+            await _reindex_source(existing_source, file)
+        return
+
     file_path = await drive_service.download_file(
         file_id=file["id"],
         file_name=file["name"],
@@ -158,11 +184,7 @@ async def _create_source(file: dict, notebook_id: str) -> None:
     source_record = source_result[0] if isinstance(source_result, list) else source_result
     source_id = source_record["id"]
 
-    await repo_relate(
-        ensure_record_id(source_id),
-        "reference",
-        ensure_record_id(notebook_id),
-    )
+    await _ensure_notebook_reference(str(source_id), notebook_id)
 
     command_input = SourceProcessingInput(
         source_id=str(source_id),
