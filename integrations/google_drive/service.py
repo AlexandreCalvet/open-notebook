@@ -41,6 +41,8 @@ SUPPORTED_MIME_TYPES = {
     "text/plain",
     "text/html",
     "text/markdown",
+    "text/x-markdown",
+    "application/markdown",
     "application/vnd.google-apps.document",
     "application/vnd.google-apps.presentation",
     "application/vnd.google-apps.spreadsheet",
@@ -191,21 +193,51 @@ async def list_folder_contents(folder_id: str) -> List[Dict[str, Any]]:
         raise ValueError("No Google Drive credential found")
 
     service = _build_drive_service(cred_data)
-    mime_filter = " or ".join(f"mimeType='{m}'" for m in SUPPORTED_MIME_TYPES)
-    query = f"'{folder_id}' in parents and trashed=false and ({mime_filter})"
+    query = f"'{folder_id}' in parents and trashed=false"
 
-    result = (
-        service.files()
-        .list(
-            q=query,
-            fields="files(id,name,mimeType,modifiedTime,size)",
-            pageSize=100,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
+    def _is_supported(file_name: str, mime_type: str) -> bool:
+        mt = (mime_type or "").lower()
+        name = (file_name or "").lower()
+        if mt in SUPPORTED_MIME_TYPES:
+            return True
+        # Some providers/upload paths return markdown as text/* variants.
+        if mt.startswith("text/"):
+            return True
+        # Last-resort extension guard for markdown-like files.
+        if name.endswith((".md", ".markdown", ".txt", ".html", ".htm")):
+            return True
+        return False
+
+    all_files: List[Dict[str, Any]] = []
+    page_token: Optional[str] = None
+
+    while True:
+        result = (
+            service.files()
+            .list(
+                q=query,
+                fields="nextPageToken,files(id,name,mimeType,modifiedTime,size)",
+                pageSize=100,
+                pageToken=page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
         )
-        .execute()
+        files = result.get("files", [])
+        all_files.extend(files)
+        page_token = result.get("nextPageToken")
+        if not page_token:
+            break
+
+    supported_files = [
+        f for f in all_files if _is_supported(f.get("name", ""), f.get("mimeType", ""))
+    ]
+    skipped_count = len(all_files) - len(supported_files)
+    logger.debug(
+        f"Drive folder {folder_id}: total={len(all_files)} supported={len(supported_files)} skipped={skipped_count}"
     )
-    return result.get("files", [])
+    return supported_files
 
 
 
