@@ -8,8 +8,6 @@ export interface DriveStatus {
 
 export interface PickerConfig {
   access_token: string
-  api_key: string
-  client_id: string
   app_id: string
 }
 
@@ -35,7 +33,6 @@ export interface ImportFileEntry {
   id: string
   name: string
   mimeType: string
-  modifiedTime?: string
 }
 
 export const driveApi = {

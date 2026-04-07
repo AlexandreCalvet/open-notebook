@@ -93,8 +93,8 @@ async def disconnect_drive():
 @router.get("/picker-config")
 async def get_picker_config():
     """
-    Return everything the frontend needs to open the native Google Picker:
-    a fresh access token, the API key, client ID, and GCP app ID.
+    Return a fresh OAuth access token and the GCP app ID so the frontend
+    can open the native Google Picker. No extra API key needed.
     """
     cred = await drive_service.get_credential()
     if not cred:
@@ -104,15 +104,11 @@ async def get_picker_config():
     if not token:
         raise HTTPException(status_code=400, detail="Unable to obtain access token")
 
-    api_key = os.environ.get("GOOGLE_DRIVE_API_KEY", "")
     client_id = os.environ["GOOGLE_DRIVE_CLIENT_ID"]
-    # App ID = first numeric portion of the client ID
     app_id = client_id.split("-")[0] if "-" in client_id else ""
 
     return {
         "access_token": token,
-        "api_key": api_key,
-        "client_id": client_id,
         "app_id": app_id,
     }
 
