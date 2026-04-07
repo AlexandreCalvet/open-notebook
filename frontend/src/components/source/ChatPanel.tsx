@@ -19,10 +19,19 @@ import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
-import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
+import {
+  convertReferencesToCompactMarkdown,
+  createCompactReferenceLinkComponent,
+  parseSourceReferences,
+  type ReferenceLabelMap,
+  type ReferenceType,
+} from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { sourcesApi } from '@/lib/api/sources'
+import { insightsApi } from '@/lib/api/insights'
+import { notesApi } from '@/lib/api/notes'
 
 interface NotebookContextStats {
   sourcesInsights: number
@@ -333,8 +342,59 @@ function AIMessageContent({
   onReferenceClick: (type: string, id: string) => void
 }) {
   const { t } = useTranslation()
+  const [labelMap, setLabelMap] = useState<ReferenceLabelMap>({})
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadReferenceLabels = async () => {
+      const refs = parseSourceReferences(content)
+      if (refs.length === 0) {
+        setLabelMap({})
+        return
+      }
+
+      const uniqueRefs = Array.from(
+        new Map(refs.map((r) => [`${r.type}:${r.id}`, r])).values()
+      )
+
+      const entries = await Promise.all(
+        uniqueRefs.map(async (ref) => {
+          const key = `${ref.type}:${ref.id}`
+          try {
+            if (ref.type === 'source') {
+              const source = await sourcesApi.get(`${ref.type}:${ref.id}`)
+              return [key, `Source: ${source.title || `${ref.type}:${ref.id}`}`] as const
+            }
+            if (ref.type === 'source_insight') {
+              const insight = await insightsApi.get(`${ref.type}:${ref.id}`)
+              const source = await sourcesApi.get(insight.source_id)
+              return [key, `Insight: ${source.title || insight.source_id}`] as const
+            }
+            if (ref.type === 'note') {
+              const note = await notesApi.get(`${ref.type}:${ref.id}`)
+              return [key, `Note: ${note.title || `${ref.type}:${ref.id}`}`] as const
+            }
+            return [key, key] as const
+          } catch {
+            return [key, key] as const
+          }
+        })
+      )
+
+      if (!cancelled) {
+        setLabelMap(Object.fromEntries(entries))
+      }
+    }
+
+    void loadReferenceLabels()
+    return () => {
+      cancelled = true
+    }
+  }, [content])
+
   // Convert references to compact markdown with numbered citations
-  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t.common.references)
+  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t.common.references, labelMap)
 
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)

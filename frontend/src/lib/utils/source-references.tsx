@@ -31,6 +31,8 @@ export interface ReferenceData {
   id: string
 }
 
+export type ReferenceLabelMap = Record<string, string>
+
 /**
  * Parse source references from text
  *
@@ -336,7 +338,11 @@ export function createReferenceLinkComponent(
  * Input: "See [source:abc] and [note:xyz]. Also [source:abc] again."
  * Output: "See [1] and [2]. Also [1] again.\n\nReferences:\n[1] - [source:abc]\n[2] - [note:xyz]"
  */
-export function convertReferencesToCompactMarkdown(text: string, referencesLabel: string = 'References'): string {
+export function convertReferencesToCompactMarkdown(
+  text: string,
+  referencesLabel: string = 'References',
+  labelMap?: ReferenceLabelMap
+): string {
   // Step 1: Parse all references using existing function
   const references = parseSourceReferences(text)
 
@@ -401,7 +407,9 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 
   // Iterate through reference map in insertion order (Map preserves order)
   for (const [, refData] of referenceMap) {
-    const refListItem = `[${refData.number}] - [${refData.type}:${refData.id}](#ref-${refData.type}-${refData.id})`
+    const key = `${refData.type}:${refData.id}`
+    const displayLabel = labelMap?.[key] ?? `${refData.type}:${refData.id}`
+    const refListItem = `[${refData.number}] - [${displayLabel}](#ref-${refData.type}-${refData.id})`
     refListLines.push(refListItem)
   }
 
