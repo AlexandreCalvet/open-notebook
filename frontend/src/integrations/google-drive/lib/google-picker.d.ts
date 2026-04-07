@@ -25,6 +25,7 @@ interface GooglePickerBuilder {
   setOAuthToken(token: string): GooglePickerBuilder
   setDeveloperKey(key: string): GooglePickerBuilder
   setAppId(id: string): GooglePickerBuilder
+  setOrigin(origin: string): GooglePickerBuilder
   addView(view: GooglePickerDocsView): GooglePickerBuilder
   enableFeature(feature: string): GooglePickerBuilder
   setCallback(cb: (data: any) => void): GooglePickerBuilder
