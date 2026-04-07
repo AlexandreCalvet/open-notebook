@@ -8,7 +8,9 @@ export interface DriveStatus {
 
 export interface PickerConfig {
   access_token: string
+  api_key: string
   app_id: string
+  origin: string
 }
 
 export interface DriveSyncConfig {

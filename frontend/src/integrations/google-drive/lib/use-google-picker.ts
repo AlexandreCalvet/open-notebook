@@ -50,6 +50,7 @@ export function useGooglePicker() {
       .setEnableDrives(true)
 
     const builder = new google.picker.PickerBuilder()
+      .setDeveloperKey(config.api_key)
       .setOAuthToken(config.access_token)
       .setAppId(config.app_id)
       .addView(docsView)
@@ -66,6 +67,10 @@ export function useGooglePicker() {
           onPicked(items)
         }
       })
+
+    if (config.origin) {
+      builder.setOrigin(config.origin)
+    }
 
     builder.build().setVisible(true)
   }, [])
