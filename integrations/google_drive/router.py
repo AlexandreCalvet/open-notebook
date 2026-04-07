@@ -10,12 +10,14 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from loguru import logger
+from pydantic import BaseModel
 
 from open_notebook.database.repository import (
     ensure_record_id,
     repo_create,
     repo_delete,
     repo_query,
+    repo_relate,
     repo_upsert,
 )
 
@@ -84,55 +86,109 @@ async def disconnect_drive():
 
 
 # ---------------------------------------------------------------------------
-# Drive browsing — navigable folder tree + shared drives
+# Google Picker support
 # ---------------------------------------------------------------------------
 
 
-@router.get("/browse")
-async def browse_drive(
-    parent_id: str = "root",
-    page_token: Optional[str] = Query(None),
-):
+@router.get("/picker-config")
+async def get_picker_config():
     """
-    Browse Drive contents with pagination.
-    Returns {items, parent_id, nextPageToken}.
+    Return everything the frontend needs to open the native Google Picker:
+    a fresh access token, the API key, client ID, and GCP app ID.
     """
     cred = await drive_service.get_credential()
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
-    result = await drive_service.list_drive_children(
-        parent_id=parent_id, page_token=page_token
-    )
-    return {**result, "parent_id": parent_id}
 
+    token = await drive_service.get_fresh_access_token()
+    if not token:
+        raise HTTPException(status_code=400, detail="Unable to obtain access token")
 
-@router.get("/search")
-async def search_drive(
-    q: str = Query(..., min_length=2),
-    page_token: Optional[str] = Query(None),
-):
-    """Full-text search across the user's entire Drive."""
-    cred = await drive_service.get_credential()
-    if not cred:
-        raise HTTPException(status_code=400, detail="Not connected to Google Drive")
-    return await drive_service.search_drive(query=q, page_token=page_token)
+    api_key = os.environ.get("GOOGLE_DRIVE_API_KEY", "")
+    client_id = os.environ["GOOGLE_DRIVE_CLIENT_ID"]
+    # App ID = first numeric portion of the client ID
+    app_id = client_id.split("-")[0] if "-" in client_id else ""
 
-
-@router.get("/shared-drives")
-async def list_shared_drives():
-    """List shared drives the authenticated user can access."""
-    cred = await drive_service.get_credential()
-    if not cred:
-        raise HTTPException(status_code=400, detail="Not connected to Google Drive")
-    try:
-        drives = await drive_service.list_shared_drives()
-    except Exception:
-        drives = []
-    return {"drives": drives}
+    return {
+        "access_token": token,
+        "api_key": api_key,
+        "client_id": client_id,
+        "app_id": app_id,
+    }
 
 
 # ---------------------------------------------------------------------------
-# Drive Sync CRUD
+# Import individual files (from Picker selection)
+# ---------------------------------------------------------------------------
+
+
+class ImportFilesRequest(BaseModel):
+    notebook_id: str
+    files: List[dict]  # [{id, name, mimeType}]
+
+
+@router.post("/import-files")
+async def import_files(data: ImportFilesRequest):
+    """
+    Import individual Drive files as sources in a notebook.
+    Downloads each file and submits it to the standard source processing pipeline.
+    """
+    cred = await drive_service.get_credential()
+    if not cred:
+        raise HTTPException(status_code=400, detail="Not connected to Google Drive")
+
+    import commands.source_commands  # noqa: F401
+    from surreal_commands import submit_command
+    from commands.source_commands import SourceProcessingInput
+
+    notebook_rid = ensure_record_id(data.notebook_id)
+    imported = []
+
+    for file_info in data.files:
+        try:
+            file_path = await drive_service.download_file(
+                file_id=file_info["id"],
+                file_name=file_info["name"],
+                mime_type=file_info["mimeType"],
+            )
+
+            source_record = await repo_create(
+                "source",
+                {
+                    "title": file_info["name"],
+                    "asset": {"file_path": file_path},
+                    "drive_file_id": file_info["id"],
+                    "drive_modified_time": file_info.get("modifiedTime", ""),
+                },
+            )
+            source_id = source_record["id"]
+
+            await repo_relate(
+                ensure_record_id(source_id),
+                "reference",
+                notebook_rid,
+            )
+
+            command_input = SourceProcessingInput(
+                source_id=str(source_id),
+                content_state={"file_path": file_path, "delete_source": True},
+                notebook_ids=[data.notebook_id],
+                transformations=[],
+                embed=True,
+            )
+            submit_command("open_notebook", "process_source", command_input.model_dump())
+            imported.append({"file_name": file_info["name"], "source_id": source_id})
+            logger.info(f"Imported Drive file '{file_info['name']}' → source {source_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to import Drive file {file_info.get('id')}: {e}")
+            imported.append({"file_name": file_info.get("name", "?"), "error": str(e)})
+
+    return {"imported": imported}
+
+
+# ---------------------------------------------------------------------------
+# Drive Sync CRUD (folder-level polling)
 # ---------------------------------------------------------------------------
 
 
