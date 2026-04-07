@@ -201,11 +201,9 @@ async def create_sync(data: DriveSyncCreate):
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
 
-    notebook_rid = ensure_record_id(data.notebook_id)
-
     existing = await repo_query(
         "SELECT * FROM drive_sync WHERE folder_id = $fid AND notebook_id = $nid LIMIT 1",
-        {"fid": data.folder_id, "nid": notebook_rid},
+        {"fid": data.folder_id, "nid": data.notebook_id},
     )
     if existing:
         raise HTTPException(
@@ -216,7 +214,7 @@ async def create_sync(data: DriveSyncCreate):
     result = await repo_create(
         "drive_sync",
         {
-            "notebook_id": notebook_rid,
+            "notebook_id": data.notebook_id,
             "folder_id": data.folder_id,
             "folder_name": data.folder_name,
             "poll_interval_minutes": data.poll_interval_minutes,
@@ -233,7 +231,7 @@ async def list_syncs(notebook_id: Optional[str] = Query(None)):
     if notebook_id:
         results = await repo_query(
             "SELECT * FROM drive_sync WHERE notebook_id = $nid",
-            {"nid": ensure_record_id(notebook_id)},
+            {"nid": notebook_id},
         )
     else:
         results = await repo_query("SELECT * FROM drive_sync")
