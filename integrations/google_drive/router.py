@@ -89,17 +89,33 @@ async def disconnect_drive():
 
 
 @router.get("/browse")
-async def browse_drive(parent_id: str = "root"):
+async def browse_drive(
+    parent_id: str = "root",
+    page_token: Optional[str] = Query(None),
+):
     """
-    Browse Drive contents.  Returns folders and supported files inside *parent_id*.
-    Use parent_id='root' (default) for the top level of My Drive.
-    Pass a shared-drive ID to browse into a shared drive.
+    Browse Drive contents with pagination.
+    Returns {items, parent_id, nextPageToken}.
     """
     cred = await drive_service.get_credential()
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
-    items = await drive_service.list_drive_children(parent_id=parent_id)
-    return {"items": items, "parent_id": parent_id}
+    result = await drive_service.list_drive_children(
+        parent_id=parent_id, page_token=page_token
+    )
+    return {**result, "parent_id": parent_id}
+
+
+@router.get("/search")
+async def search_drive(
+    q: str = Query(..., min_length=2),
+    page_token: Optional[str] = Query(None),
+):
+    """Full-text search across the user's entire Drive."""
+    cred = await drive_service.get_credential()
+    if not cred:
+        raise HTTPException(status_code=400, detail="Not connected to Google Drive")
+    return await drive_service.search_drive(query=q, page_token=page_token)
 
 
 @router.get("/shared-drives")
