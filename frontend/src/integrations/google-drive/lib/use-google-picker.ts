@@ -68,9 +68,7 @@ export function useGooglePicker() {
         }
       })
 
-    if (config.origin) {
-      builder.setOrigin(config.origin)
-    }
+    builder.setOrigin(window.location.protocol + '//' + window.location.host)
 
     builder.build().setVisible(true)
   }, [])
