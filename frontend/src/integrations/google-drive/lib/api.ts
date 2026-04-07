@@ -6,17 +6,11 @@ export interface DriveStatus {
   user_email: string | null
 }
 
-export interface DriveFolder {
-  id: string
-  name: string
-  modifiedTime: string
-}
-
-export interface DriveFile {
+export interface DriveItem {
   id: string
   name: string
   mimeType: string
-  modifiedTime: string
+  modifiedTime?: string
   size?: string
 }
 
@@ -38,6 +32,8 @@ export interface CreateDriveSyncRequest {
   poll_interval_minutes?: number
 }
 
+export const FOLDER_MIME = 'application/vnd.google-apps.folder'
+
 export const driveApi = {
   getStatus: async (): Promise<DriveStatus> => {
     const res = await apiClient.get('/drive/status')
@@ -53,13 +49,13 @@ export const driveApi = {
     await apiClient.delete('/drive/disconnect')
   },
 
-  listFolders: async (): Promise<{ folders: DriveFolder[] }> => {
-    const res = await apiClient.get('/drive/folders')
+  browse: async (parentId: string = 'root'): Promise<{ items: DriveItem[]; parent_id: string }> => {
+    const res = await apiClient.get('/drive/browse', { params: { parent_id: parentId } })
     return res.data
   },
 
-  listFolderFiles: async (folderId: string): Promise<{ files: DriveFile[] }> => {
-    const res = await apiClient.get(`/drive/folders/${folderId}/files`)
+  listSharedDrives: async (): Promise<{ drives: DriveItem[] }> => {
+    const res = await apiClient.get('/drive/shared-drives')
     return res.data
   },
 

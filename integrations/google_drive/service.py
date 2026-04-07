@@ -172,7 +172,7 @@ def _build_drive_service(cred_data: Dict[str, Any]):
 
 
 async def list_folder_contents(folder_id: str) -> List[Dict[str, Any]]:
-    """List supported files in a Drive folder (non-recursive)."""
+    """List supported files in a Drive folder (non-recursive). Works with shared drives."""
     cred_data = await get_credential()
     if not cred_data:
         raise ValueError("No Google Drive credential found")
@@ -187,30 +187,63 @@ async def list_folder_contents(folder_id: str) -> List[Dict[str, Any]]:
             q=query,
             fields="files(id,name,mimeType,modifiedTime,size)",
             pageSize=100,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
         )
         .execute()
     )
     return result.get("files", [])
 
 
-async def list_user_folders() -> List[Dict[str, Any]]:
-    """List top-level Drive folders accessible to the connected user."""
+async def list_drive_children(
+    parent_id: str = "root",
+    folders_only: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    List children of a Drive folder.  Pass parent_id='root' for the top level.
+    Supports shared drives transparently.
+    """
     cred_data = await get_credential()
     if not cred_data:
         raise ValueError("No Google Drive credential found")
 
     service = _build_drive_service(cred_data)
+
+    if folders_only:
+        q = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    else:
+        mime_filter = " or ".join(
+            f"mimeType='{m}'" for m in (SUPPORTED_MIME_TYPES | {"application/vnd.google-apps.folder"})
+        )
+        q = f"'{parent_id}' in parents and trashed=false and ({mime_filter})"
+
     result = (
         service.files()
         .list(
-            q="mimeType='application/vnd.google-apps.folder' and trashed=false",
-            fields="files(id,name,modifiedTime)",
-            pageSize=50,
-            orderBy="name",
+            q=q,
+            fields="files(id,name,mimeType,modifiedTime,size)",
+            pageSize=100,
+            orderBy="folder,name",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
         )
         .execute()
     )
     return result.get("files", [])
+
+
+async def list_shared_drives() -> List[Dict[str, Any]]:
+    """List shared drives the user has access to."""
+    cred_data = await get_credential()
+    if not cred_data:
+        raise ValueError("No Google Drive credential found")
+
+    service = _build_drive_service(cred_data)
+    result = service.drives().list(pageSize=50).execute()
+    return [
+        {"id": d["id"], "name": d["name"], "mimeType": "application/vnd.google-apps.folder"}
+        for d in result.get("drives", [])
+    ]
 
 
 async def download_file(file_id: str, file_name: str, mime_type: str) -> str:

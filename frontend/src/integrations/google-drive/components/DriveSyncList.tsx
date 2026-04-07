@@ -3,7 +3,16 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { FolderSync, HardDrive, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ChevronRight,
+  File,
+  Folder,
+  HardDrive,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,15 +25,179 @@ import {
 } from '@/components/ui/dialog'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 
-import { DriveFolder, driveApi } from '../lib/api'
+import { DriveItem, FOLDER_MIME, driveApi } from '../lib/api'
 
 interface DriveSyncListProps {
   notebookId: string
 }
 
+// ─── Drive folder browser (inside dialog) ────────────────────────────────
+
+interface BreadcrumbEntry {
+  id: string
+  name: string
+}
+
+function DriveBrowser({
+  notebookId,
+  onSyncAdded,
+}: {
+  notebookId: string
+  onSyncAdded: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [path, setPath] = useState<BreadcrumbEntry[]>([{ id: 'root', name: 'My Drive' }])
+  const currentFolder = path[path.length - 1]
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['drive-browse', currentFolder.id],
+    queryFn: () => driveApi.browse(currentFolder.id),
+  })
+
+  const { data: sharedDrives } = useQuery({
+    queryKey: ['drive-shared-drives'],
+    queryFn: driveApi.listSharedDrives,
+    enabled: currentFolder.id === 'root',
+  })
+
+  const addSyncMutation = useMutation({
+    mutationFn: (folder: { id: string; name: string }) =>
+      driveApi.createSync({
+        notebook_id: notebookId,
+        folder_id: folder.id,
+        folder_name: folder.name,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drive-syncs', notebookId] })
+      toast.success('Folder sync added — first sync will run within 15 minutes.')
+      onSyncAdded()
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || 'Failed to add folder sync'
+      toast.error(msg)
+    },
+  })
+
+  const navigateInto = (item: DriveItem) => {
+    setPath((prev) => [...prev, { id: item.id, name: item.name }])
+  }
+
+  const navigateTo = (index: number) => {
+    setPath((prev) => prev.slice(0, index + 1))
+  }
+
+  const items = data?.items ?? []
+  const folders = items.filter((i) => i.mimeType === FOLDER_MIME)
+  const files = items.filter((i) => i.mimeType !== FOLDER_MIME)
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+        {path.map((entry, idx) => (
+          <span key={entry.id} className="flex items-center gap-1">
+            {idx > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
+            <button
+              className="hover:underline hover:text-foreground transition-colors"
+              onClick={() => navigateTo(idx)}
+            >
+              {entry.name}
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {/* Sync current folder button */}
+      {currentFolder.id !== 'root' && (
+        <Button
+          size="sm"
+          onClick={() =>
+            addSyncMutation.mutate({ id: currentFolder.id, name: currentFolder.name })
+          }
+          disabled={addSyncMutation.isPending}
+          className="self-start"
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Sync "{currentFolder.name}"
+        </Button>
+      )}
+
+      {/* Item list */}
+      <div className="max-h-80 overflow-y-auto border rounded-md divide-y">
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <LoadingSpinner />
+          </div>
+        ) : (
+          <>
+            {/* Shared drives at root level */}
+            {currentFolder.id === 'root' &&
+              sharedDrives?.drives?.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => navigateInto(d)}
+                  className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-muted transition-colors text-sm"
+                >
+                  <HardDrive className="h-4 w-4 shrink-0 text-blue-500" />
+                  <span className="truncate font-medium">{d.name}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">Shared drive</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              ))}
+
+            {/* Folders */}
+            {folders.map((item) => (
+              <div key={item.id} className="flex items-center w-full hover:bg-muted transition-colors">
+                <button
+                  onClick={() => navigateInto(item)}
+                  className="flex items-center gap-2 px-3 py-2 flex-1 text-left text-sm min-w-0"
+                >
+                  <Folder className="h-4 w-4 shrink-0 text-yellow-500" />
+                  <span className="truncate">{item.name}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground ml-auto" />
+                </button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 mr-1 text-xs"
+                  onClick={() => addSyncMutation.mutate({ id: item.id, name: item.name })}
+                  disabled={addSyncMutation.isPending}
+                  title={`Sync "${item.name}"`}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Sync
+                </Button>
+              </div>
+            ))}
+
+            {/* Files (informational — not selectable for sync) */}
+            {files.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"
+              >
+                <File className="h-4 w-4 shrink-0" />
+                <span className="truncate">{item.name}</span>
+              </div>
+            ))}
+
+            {folders.length === 0 && files.length === 0 && !isLoading && (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                This folder is empty or has no supported files.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main component ──────────────────────────────────────────────────────
+
 export function DriveSyncList({ notebookId }: DriveSyncListProps) {
   const queryClient = useQueryClient()
-  const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const { data: status } = useQuery({
     queryKey: ['drive-status'],
@@ -36,28 +209,6 @@ export function DriveSyncList({ notebookId }: DriveSyncListProps) {
     queryKey: ['drive-syncs', notebookId],
     queryFn: () => driveApi.listSyncs(notebookId),
     enabled: status?.connected === true,
-  })
-
-  const { data: foldersData, isLoading: foldersLoading } = useQuery({
-    queryKey: ['drive-folders'],
-    queryFn: driveApi.listFolders,
-    enabled: folderDialogOpen && status?.connected === true,
-  })
-
-  const addSyncMutation = useMutation({
-    mutationFn: (folder: DriveFolder) =>
-      driveApi.createSync({
-        notebook_id: notebookId,
-        folder_id: folder.id,
-        folder_name: folder.name,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['drive-syncs', notebookId] })
-      setFolderDialogOpen(false)
-      toast.success('Folder sync added. First sync will run within 15 minutes.')
-    },
-    onError: (err: any) =>
-      toast.error(err?.response?.data?.detail || 'Failed to add folder sync'),
   })
 
   const deleteSyncMutation = useMutation({
@@ -72,10 +223,9 @@ export function DriveSyncList({ notebookId }: DriveSyncListProps) {
   const triggerSyncMutation = useMutation({
     mutationFn: driveApi.triggerSync,
     onSuccess: () => toast.success('Sync completed'),
-    onError: () => toast.error('Sync failed — check the API logs for details'),
+    onError: () => toast.error('Sync failed — check API logs for details'),
   })
 
-  // Only render when Drive is configured and connected
   if (!status?.configured || !status?.connected) return null
 
   return (
@@ -86,40 +236,21 @@ export function DriveSyncList({ notebookId }: DriveSyncListProps) {
           Drive Syncs
         </h3>
 
-        <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button variant="ghost" size="sm" title="Add Drive folder sync">
               <Plus className="h-4 w-4" />
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Add Drive Folder Sync</DialogTitle>
+              <DialogTitle>Browse Google Drive</DialogTitle>
             </DialogHeader>
-            {foldersLoading ? (
-              <div className="py-6 flex justify-center">
-                <LoadingSpinner />
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {foldersData?.folders.map((folder) => (
-                  <Button
-                    key={folder.id}
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => addSyncMutation.mutate(folder)}
-                    disabled={addSyncMutation.isPending}
-                  >
-                    <FolderSync className="h-4 w-4 mr-2 shrink-0" />
-                    <span className="truncate">{folder.name}</span>
-                  </Button>
-                ))}
-                {!foldersData?.folders.length && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No folders found in your Drive.
-                  </p>
-                )}
-              </div>
+            {dialogOpen && (
+              <DriveBrowser
+                notebookId={notebookId}
+                onSyncAdded={() => setDialogOpen(false)}
+              />
             )}
           </DialogContent>
         </Dialog>
@@ -140,9 +271,7 @@ export function DriveSyncList({ notebookId }: DriveSyncListProps) {
                         Last sync: {new Date(sync.last_sync_at).toLocaleString()}
                       </p>
                     ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Pending first sync…
-                      </p>
+                      <p className="text-xs text-muted-foreground">Pending first sync…</p>
                     )}
                   </div>
                   <div className="flex gap-1 shrink-0">
@@ -154,7 +283,11 @@ export function DriveSyncList({ notebookId }: DriveSyncListProps) {
                       disabled={triggerSyncMutation.isPending}
                       title="Force sync now"
                     >
-                      <RefreshCw className="h-3 w-3" />
+                      {triggerSyncMutation.isPending ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3" />
+                      )}
                     </Button>
                     <Button
                       variant="ghost"

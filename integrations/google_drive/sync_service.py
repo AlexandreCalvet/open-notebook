@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 
 from loguru import logger
 
-from open_notebook.database.repository import repo_query, repo_relate, repo_upsert, repo_create, ensure_record_id
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_create,
+    repo_query,
+    repo_relate,
+    repo_upsert,
+)
 
 from integrations.google_drive import service as drive_service
 
@@ -172,7 +178,7 @@ async def force_sync(sync_id: str) -> None:
     """Manually trigger sync for a specific drive_sync record."""
     results = await repo_query(
         "SELECT * FROM drive_sync WHERE id = $id LIMIT 1",
-        {"id": sync_id},
+        {"id": ensure_record_id(sync_id)},
     )
     if not results:
         raise ValueError(f"Drive sync '{sync_id}' not found")
