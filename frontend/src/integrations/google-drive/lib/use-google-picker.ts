@@ -38,8 +38,18 @@ export function useGooglePicker() {
     await loadScript(PICKER_SCRIPT)
     await loadPicker()
 
+    const myDriveView = new google.picker.DocsView()
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+
+    const sharedDrivesView = new google.picker.DocsView()
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setEnableDrives(true)
+
     const picker = new google.picker.PickerBuilder()
-      .addView(google.picker.ViewId.DOCS)
+      .addView(myDriveView)
+      .addView(sharedDrivesView)
       .setOAuthToken(config.access_token)
       .setDeveloperKey(config.api_key)
       .setAppId(config.app_id)
