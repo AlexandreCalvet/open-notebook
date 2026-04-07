@@ -27,6 +27,11 @@ DEFINE FIELD IF NOT EXISTS last_sync_at ON TABLE drive_sync TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS enabled ON TABLE drive_sync TYPE bool DEFAULT true;
 DEFINE FIELD IF NOT EXISTS created ON TABLE drive_sync TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS updated ON TABLE drive_sync TYPE option<datetime>;
+
+-- Extend core source schema for stable Drive dedupe tracking.
+DEFINE FIELD IF NOT EXISTS drive_file_id ON TABLE source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS drive_modified_time ON TABLE source TYPE option<string>;
+DEFINE INDEX IF NOT EXISTS idx_source_drive_file_id ON TABLE source FIELDS drive_file_id;
 """
 
 

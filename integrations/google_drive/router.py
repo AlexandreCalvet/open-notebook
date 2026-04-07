@@ -49,6 +49,18 @@ def _normalize_sync(record: dict) -> dict:
     return out
 
 
+async def _ensure_notebook_reference(source_id: str, notebook_id: str) -> None:
+    """Create source->notebook relation if missing."""
+    sid = ensure_record_id(source_id)
+    nid = ensure_record_id(notebook_id)
+    existing_ref = await repo_query(
+        "SELECT * FROM reference WHERE in = $sid AND out = $nid LIMIT 1",
+        {"sid": sid, "nid": nid},
+    )
+    if not existing_ref:
+        await repo_relate(sid, "reference", nid)
+
+
 # ---------------------------------------------------------------------------
 # Status & OAuth
 # ---------------------------------------------------------------------------
@@ -160,11 +172,26 @@ async def import_files(data: ImportFilesRequest):
     from surreal_commands import submit_command
     from commands.source_commands import SourceProcessingInput
 
-    notebook_rid = ensure_record_id(data.notebook_id)
     imported = []
 
     for file_info in data.files:
         try:
+            existing = await repo_query(
+                "SELECT * FROM source WHERE drive_file_id = $fid LIMIT 1",
+                {"fid": file_info["id"]},
+            )
+            if existing:
+                existing_source_id = str(existing[0]["id"])
+                await _ensure_notebook_reference(existing_source_id, data.notebook_id)
+                imported.append(
+                    {
+                        "file_name": file_info["name"],
+                        "source_id": existing_source_id,
+                        "status": "already_indexed",
+                    }
+                )
+                continue
+
             file_path = await drive_service.download_file(
                 file_id=file_info["id"],
                 file_name=file_info["name"],
@@ -183,11 +210,7 @@ async def import_files(data: ImportFilesRequest):
             source_record = source_result[0] if isinstance(source_result, list) else source_result
             source_id = source_record["id"]
 
-            await repo_relate(
-                ensure_record_id(source_id),
-                "reference",
-                notebook_rid,
-            )
+            await _ensure_notebook_reference(str(source_id), data.notebook_id)
 
             command_input = SourceProcessingInput(
                 source_id=str(source_id),
