@@ -23,6 +23,7 @@ import { ContextMode } from '../[id]/page'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { DriveSyncList } from '@/integrations/google-drive/components/DriveSyncList'
 
 interface SourcesColumnProps {
   sources?: SourceListResponse[]
@@ -220,11 +221,12 @@ export function SourcesColumn({
                 )}
               </div>
             )}
+            <DriveSyncList notebookId={notebookId} />
           </CardContent>
         </Card>
       </CollapsibleColumn>
 
-      <AddSourceDialog
+          <AddSourceDialog
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         defaultNotebookId={notebookId}
