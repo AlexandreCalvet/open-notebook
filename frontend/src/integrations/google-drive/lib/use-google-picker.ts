@@ -1,5 +1,5 @@
-import { useCallback, useRef } from 'react'
-import { driveApi, PickerConfig } from './api'
+import { useCallback } from 'react'
+import { driveApi } from './api'
 
 const PICKER_SCRIPT = 'https://apis.google.com/js/api.js'
 
@@ -32,18 +32,12 @@ function loadPicker(): Promise<void> {
 }
 
 export function useGooglePicker() {
-  const configRef = useRef<PickerConfig | null>(null)
-
   const openPicker = useCallback(async (onPicked: OnPicked) => {
-    // 1. Get fresh config from backend
     const config = await driveApi.getPickerConfig()
-    configRef.current = config
 
-    // 2. Load Google API script + Picker library
     await loadScript(PICKER_SCRIPT)
     await loadPicker()
 
-    // 3. Build and show Picker
     const google = window.google
 
     const docsView = new google.picker.DocsView()
@@ -57,14 +51,14 @@ export function useGooglePicker() {
 
     const builder = new google.picker.PickerBuilder()
       .setOAuthToken(config.access_token)
+      .setAppId(config.app_id)
       .addView(docsView)
       .addView(sharedDriveView)
       .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
       .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
       .setCallback((data: any) => {
         if (data.action === google.picker.Action.PICKED) {
-          const docs = data.docs || []
-          const items: PickerResult[] = docs.map((d: any) => ({
+          const items: PickerResult[] = (data.docs || []).map((d: any) => ({
             id: d.id,
             name: d.name,
             mimeType: d.mimeType,
@@ -72,13 +66,6 @@ export function useGooglePicker() {
           onPicked(items)
         }
       })
-
-    if (config.api_key) {
-      builder.setDeveloperKey(config.api_key)
-    }
-    if (config.app_id) {
-      builder.setAppId(config.app_id)
-    }
 
     builder.build().setVisible(true)
   }, [])
