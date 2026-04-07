@@ -35,14 +35,9 @@ async def init_drive_schema() -> None:
     try:
         async with db_connection() as conn:
             await conn.query(DRIVE_SCHEMA_SQL)
-            # Clean up orphaned syncs from earlier bug where notebook_id was a
-            # plain string instead of a record<notebook> — those records can
-            # never match a real notebook so they just cause "already synced".
             await conn.query(
-                "DELETE drive_sync WHERE notebook_id IS NONE OR notebook_id = NONE;"
+                "DELETE drive_sync WHERE notebook_id IS NONE OR notebook_id = NONE"
             )
-            # TODO: remove after first clean deployment — wipes stale syncs from dev
-            await conn.query("DELETE drive_sync;")
         logger.success("Google Drive schema initialized")
     except Exception as e:
         logger.error(f"Failed to initialize Google Drive schema: {e}")
