@@ -84,28 +84,35 @@ async def disconnect_drive():
 
 
 # ---------------------------------------------------------------------------
-# Folder browsing
+# Drive browsing — navigable folder tree + shared drives
 # ---------------------------------------------------------------------------
 
 
-@router.get("/folders")
-async def list_folders():
-    """List Drive folders accessible to the connected user."""
+@router.get("/browse")
+async def browse_drive(parent_id: str = "root"):
+    """
+    Browse Drive contents.  Returns folders and supported files inside *parent_id*.
+    Use parent_id='root' (default) for the top level of My Drive.
+    Pass a shared-drive ID to browse into a shared drive.
+    """
     cred = await drive_service.get_credential()
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
-    folders = await drive_service.list_user_folders()
-    return {"folders": folders}
+    items = await drive_service.list_drive_children(parent_id=parent_id)
+    return {"items": items, "parent_id": parent_id}
 
 
-@router.get("/folders/{folder_id}/files")
-async def list_folder_files(folder_id: str):
-    """List supported files in a specific Drive folder."""
+@router.get("/shared-drives")
+async def list_shared_drives():
+    """List shared drives the authenticated user can access."""
     cred = await drive_service.get_credential()
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
-    files = await drive_service.list_folder_contents(folder_id)
-    return {"files": files}
+    try:
+        drives = await drive_service.list_shared_drives()
+    except Exception:
+        drives = []
+    return {"drives": drives}
 
 
 # ---------------------------------------------------------------------------
@@ -120,9 +127,11 @@ async def create_sync(data: DriveSyncCreate):
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
 
+    notebook_rid = ensure_record_id(data.notebook_id)
+
     existing = await repo_query(
         "SELECT * FROM drive_sync WHERE folder_id = $fid AND notebook_id = $nid LIMIT 1",
-        {"fid": data.folder_id, "nid": data.notebook_id},
+        {"fid": data.folder_id, "nid": notebook_rid},
     )
     if existing:
         raise HTTPException(
@@ -133,7 +142,7 @@ async def create_sync(data: DriveSyncCreate):
     record = await repo_create(
         "drive_sync",
         {
-            "notebook_id": data.notebook_id,
+            "notebook_id": notebook_rid,
             "folder_id": data.folder_id,
             "folder_name": data.folder_name,
             "poll_interval_minutes": data.poll_interval_minutes,
@@ -149,7 +158,7 @@ async def list_syncs(notebook_id: Optional[str] = Query(None)):
     if notebook_id:
         results = await repo_query(
             "SELECT * FROM drive_sync WHERE notebook_id = $nid",
-            {"nid": notebook_id},
+            {"nid": ensure_record_id(notebook_id)},
         )
     else:
         results = await repo_query("SELECT * FROM drive_sync")
