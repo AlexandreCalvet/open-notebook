@@ -14,6 +14,17 @@ export interface DriveItem {
   size?: string
 }
 
+export interface BrowseResponse {
+  items: DriveItem[]
+  parent_id: string
+  nextPageToken: string | null
+}
+
+export interface SearchResponse {
+  items: DriveItem[]
+  nextPageToken: string | null
+}
+
 export interface DriveSyncConfig {
   id: string
   notebook_id: string
@@ -49,8 +60,17 @@ export const driveApi = {
     await apiClient.delete('/drive/disconnect')
   },
 
-  browse: async (parentId: string = 'root'): Promise<{ items: DriveItem[]; parent_id: string }> => {
-    const res = await apiClient.get('/drive/browse', { params: { parent_id: parentId } })
+  browse: async (parentId: string = 'root', pageToken?: string): Promise<BrowseResponse> => {
+    const params: Record<string, string> = { parent_id: parentId }
+    if (pageToken) params.page_token = pageToken
+    const res = await apiClient.get('/drive/browse', { params })
+    return res.data
+  },
+
+  search: async (query: string, pageToken?: string): Promise<SearchResponse> => {
+    const params: Record<string, string> = { q: query }
+    if (pageToken) params.page_token = pageToken
+    const res = await apiClient.get('/drive/search', { params })
     return res.data
   },
 

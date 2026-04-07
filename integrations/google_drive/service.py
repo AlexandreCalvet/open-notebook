@@ -197,11 +197,11 @@ async def list_folder_contents(folder_id: str) -> List[Dict[str, Any]]:
 
 async def list_drive_children(
     parent_id: str = "root",
-    folders_only: bool = False,
-) -> List[Dict[str, Any]]:
+    page_token: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    List children of a Drive folder.  Pass parent_id='root' for the top level.
-    Supports shared drives transparently.
+    List children of a Drive folder with pagination.
+    Returns {"items": [...], "nextPageToken": str|None}.
     """
     cred_data = await get_credential()
     if not cred_data:
@@ -209,27 +209,64 @@ async def list_drive_children(
 
     service = _build_drive_service(cred_data)
 
-    if folders_only:
-        q = f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    else:
-        mime_filter = " or ".join(
-            f"mimeType='{m}'" for m in (SUPPORTED_MIME_TYPES | {"application/vnd.google-apps.folder"})
-        )
-        q = f"'{parent_id}' in parents and trashed=false and ({mime_filter})"
-
-    result = (
-        service.files()
-        .list(
-            q=q,
-            fields="files(id,name,mimeType,modifiedTime,size)",
-            pageSize=100,
-            orderBy="folder,name",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-        )
-        .execute()
+    mime_filter = " or ".join(
+        f"mimeType='{m}'" for m in (SUPPORTED_MIME_TYPES | {"application/vnd.google-apps.folder"})
     )
-    return result.get("files", [])
+    q = f"'{parent_id}' in parents and trashed=false and ({mime_filter})"
+
+    kwargs: Dict[str, Any] = dict(
+        q=q,
+        fields="nextPageToken,files(id,name,mimeType,modifiedTime,size)",
+        pageSize=50,
+        orderBy="folder,name",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    )
+    if page_token:
+        kwargs["pageToken"] = page_token
+
+    result = service.files().list(**kwargs).execute()
+    return {
+        "items": result.get("files", []),
+        "nextPageToken": result.get("nextPageToken"),
+    }
+
+
+async def search_drive(
+    query: str,
+    page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Full-text search across all of the user's Drive (My Drive + shared).
+    Returns {"items": [...], "nextPageToken": str|None}.
+    """
+    cred_data = await get_credential()
+    if not cred_data:
+        raise ValueError("No Google Drive credential found")
+
+    service = _build_drive_service(cred_data)
+
+    mime_filter = " or ".join(
+        f"mimeType='{m}'" for m in (SUPPORTED_MIME_TYPES | {"application/vnd.google-apps.folder"})
+    )
+    escaped = query.replace("'", "\\'")
+    q = f"fullText contains '{escaped}' and trashed=false and ({mime_filter})"
+
+    kwargs: Dict[str, Any] = dict(
+        q=q,
+        fields="nextPageToken,files(id,name,mimeType,modifiedTime,size)",
+        pageSize=50,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    )
+    if page_token:
+        kwargs["pageToken"] = page_token
+
+    result = service.files().list(**kwargs).execute()
+    return {
+        "items": result.get("files", []),
+        "nextPageToken": result.get("nextPageToken"),
+    }
 
 
 async def list_shared_drives() -> List[Dict[str, Any]]:
