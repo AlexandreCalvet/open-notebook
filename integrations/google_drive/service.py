@@ -27,6 +27,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
+# In-memory store for PKCE code_verifier keyed by OAuth state.
+# Needed because the auth URL and the token exchange use separate Flow instances.
+# Single-instance only — for multi-instance deployments, use Redis instead.
+_pkce_store: Dict[str, str] = {}
+
 # Supported MIME types for indexing
 SUPPORTED_MIME_TYPES = {
     "application/pdf",
@@ -85,15 +90,23 @@ def build_auth_url(state: str) -> str:
         state=state,
         prompt="consent",
     )
+    # Store PKCE code_verifier so the callback can use it with the same state
+    if hasattr(flow, "code_verifier") and flow.code_verifier:
+        _pkce_store[state] = flow.code_verifier
+        logger.debug(f"Stored PKCE code_verifier for state {state}")
     return auth_url
 
 
-async def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
+async def exchange_code_for_tokens(code: str, state: Optional[str] = None) -> Dict[str, Any]:
     """Exchange OAuth authorization code for tokens and persist to DB."""
     flow = Flow.from_client_config(_get_client_config(), scopes=SCOPES)
     flow.redirect_uri = os.environ.get(
         "GOOGLE_DRIVE_REDIRECT_URI", "http://localhost:5055/api/drive/callback"
     )
+    # Restore PKCE code_verifier if one was stored for this state
+    if state and state in _pkce_store:
+        flow.code_verifier = _pkce_store.pop(state)
+        logger.debug(f"Restored PKCE code_verifier for state {state}")
     flow.fetch_token(code=code)
 
     creds = flow.credentials
