@@ -31,6 +31,15 @@ from integrations.google_drive.models import (
 router = APIRouter(prefix="/drive", tags=["google-drive"])
 
 
+def _normalize_sync(record: dict) -> dict:
+    """Ensure all fields from SurrealDB are JSON-friendly plain types."""
+    out = dict(record)
+    out["id"] = str(out["id"])
+    if out.get("notebook_id") is not None:
+        out["notebook_id"] = str(out["notebook_id"])
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Status & OAuth
 # ---------------------------------------------------------------------------
@@ -222,7 +231,7 @@ async def create_sync(data: DriveSyncCreate):
         },
     )
     record = result[0] if isinstance(result, list) else result
-    return DriveSyncResponse(**record)
+    return DriveSyncResponse(**_normalize_sync(record))
 
 
 @router.get("/sync", response_model=List[DriveSyncResponse])
@@ -235,7 +244,7 @@ async def list_syncs(notebook_id: Optional[str] = Query(None)):
         )
     else:
         results = await repo_query("SELECT * FROM drive_sync")
-    return [DriveSyncResponse(**r) for r in results]
+    return [DriveSyncResponse(**_normalize_sync(r)) for r in results]
 
 
 @router.delete("/sync/{sync_id}")
