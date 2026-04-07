@@ -5,6 +5,7 @@ All endpoints are under /api/drive/.
 """
 import os
 import secrets
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -35,8 +36,16 @@ def _normalize_sync(record: dict) -> dict:
     """Ensure all fields from SurrealDB are JSON-friendly plain types."""
     out = dict(record)
     out["id"] = str(out["id"])
+    if ":" not in out["id"]:
+        out["id"] = f"drive_sync:{out['id']}"
     if out.get("notebook_id") is not None:
         out["notebook_id"] = str(out["notebook_id"])
+    for field in ("created", "updated", "last_sync_at"):
+        value = out.get(field)
+        if isinstance(value, datetime):
+            out[field] = value.isoformat()
+        elif value is not None:
+            out[field] = str(value)
     return out
 
 
@@ -211,14 +220,38 @@ async def create_sync(data: DriveSyncCreate):
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
 
     existing = await repo_query(
-        "SELECT * FROM drive_sync WHERE folder_id = $fid AND notebook_id = $nid LIMIT 1",
-        {"fid": data.folder_id, "nid": data.notebook_id},
+        "SELECT * FROM drive_sync WHERE folder_id = $fid",
+        {"fid": data.folder_id},
     )
-    if existing:
+    # Compare notebook IDs as strings to handle legacy rows where notebook_id
+    # may have been stored as a RecordID instead of a plain string.
+    same_notebook = [
+        r for r in existing if str(r.get("notebook_id")) == str(data.notebook_id)
+    ]
+    if any(bool(r.get("enabled", True)) for r in same_notebook):
         raise HTTPException(
             status_code=409,
             detail="This folder is already synced to this notebook",
         )
+    if same_notebook:
+        # Re-enable an existing disabled sync instead of creating duplicates.
+        row = same_notebook[0]
+        await repo_upsert(
+            "drive_sync",
+            str(row["id"]),
+            {
+                "folder_name": data.folder_name,
+                "poll_interval_minutes": data.poll_interval_minutes,
+                "enabled": True,
+            },
+            add_timestamp=True,
+        )
+        refreshed = await repo_query(
+            "SELECT * FROM drive_sync WHERE id = $id LIMIT 1",
+            {"id": ensure_record_id(str(row["id"]))},
+        )
+        if refreshed:
+            return DriveSyncResponse(**_normalize_sync(refreshed[0]))
 
     result = await repo_create(
         "drive_sync",
@@ -237,14 +270,11 @@ async def create_sync(data: DriveSyncCreate):
 @router.get("/sync", response_model=List[DriveSyncResponse])
 async def list_syncs(notebook_id: Optional[str] = Query(None)):
     """List all Drive sync configurations, optionally filtered by notebook."""
+    results = await repo_query("SELECT * FROM drive_sync")
+    normalized = [_normalize_sync(r) for r in results]
     if notebook_id:
-        results = await repo_query(
-            "SELECT * FROM drive_sync WHERE notebook_id = $nid",
-            {"nid": notebook_id},
-        )
-    else:
-        results = await repo_query("SELECT * FROM drive_sync")
-    return [DriveSyncResponse(**_normalize_sync(r)) for r in results]
+        normalized = [r for r in normalized if r.get("notebook_id") == notebook_id]
+    return [DriveSyncResponse(**r) for r in normalized]
 
 
 @router.delete("/sync/purge-all")
@@ -261,7 +291,8 @@ async def purge_all_syncs():
 @router.delete("/sync/{sync_id}")
 async def delete_sync(sync_id: str):
     """Remove a Drive sync configuration."""
-    await repo_delete(ensure_record_id(sync_id))
+    record_id = sync_id if ":" in sync_id else f"drive_sync:{sync_id}"
+    await repo_delete(ensure_record_id(record_id))
     return {"message": "Sync configuration removed"}
 
 
