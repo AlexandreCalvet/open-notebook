@@ -38,39 +38,26 @@ export function useGooglePicker() {
     await loadScript(PICKER_SCRIPT)
     await loadPicker()
 
-    const google = window.google
-
-    const docsView = new google.picker.DocsView()
-      .setIncludeFolders(true)
-      .setSelectFolderEnabled(true)
-
-    const sharedDriveView = new google.picker.DocsView()
-      .setIncludeFolders(true)
-      .setSelectFolderEnabled(true)
-      .setEnableDrives(true)
-
-    const builder = new google.picker.PickerBuilder()
-      .setDeveloperKey(config.api_key)
+    const picker = new google.picker.PickerBuilder()
+      .addView(google.picker.ViewId.DOCS)
       .setOAuthToken(config.access_token)
+      .setDeveloperKey(config.api_key)
       .setAppId(config.app_id)
-      .addView(docsView)
-      .addView(sharedDriveView)
-      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-      .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
       .setCallback((data: any) => {
-        if (data.action === google.picker.Action.PICKED) {
-          const items: PickerResult[] = (data.docs || []).map((d: any) => ({
-            id: d.id,
-            name: d.name,
-            mimeType: d.mimeType,
+        if (data[google.picker.Response.ACTION] === google.picker.Action.PICKED) {
+          const items: PickerResult[] = (data[google.picker.Response.DOCUMENTS] || []).map((d: any) => ({
+            id: d[google.picker.Document.ID],
+            name: d[google.picker.Document.NAME],
+            mimeType: d[google.picker.Document.MIME_TYPE],
           }))
           onPicked(items)
         }
       })
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
+      .build()
 
-    builder.setOrigin(window.location.protocol + '//' + window.location.host)
-
-    builder.build().setVisible(true)
+    picker.setVisible(true)
   }, [])
 
   return { openPicker }
