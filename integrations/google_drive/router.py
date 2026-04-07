@@ -254,6 +254,17 @@ async def delete_sync(sync_id: str):
     return {"message": "Sync configuration removed"}
 
 
+@router.delete("/sync/purge-all")
+async def purge_all_syncs():
+    """Delete ALL drive_sync records. Use to clean up stale data."""
+    from open_notebook.database.repository import db_connection
+
+    async with db_connection() as conn:
+        await conn.query("DELETE drive_sync")
+    logger.info("Purged all drive_sync records")
+    return {"message": "All sync records purged"}
+
+
 @router.post("/sync/{sync_id}/trigger")
 async def trigger_sync(sync_id: str):
     """Manually trigger a sync for a specific folder (does not wait for result)."""
