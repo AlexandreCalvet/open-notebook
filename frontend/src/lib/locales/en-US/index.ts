@@ -210,6 +210,7 @@ export const enUS = {
     transformations: "Transformations",
     transformation: "Transformation",
     settings: "Settings",
+    integrations: "Integrations",
     advanced: "Advanced",
     nav: "Navigation",
     language: "Toggle language",

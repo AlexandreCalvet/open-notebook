@@ -210,6 +210,7 @@ export const ptBR = {
     transformations: "Transformações",
     transformation: "Transformação",
     settings: "Configurações",
+    integrations: "Integrações",
     advanced: "Avançado",
     nav: "Navegação",
     language: "Alternar idioma",

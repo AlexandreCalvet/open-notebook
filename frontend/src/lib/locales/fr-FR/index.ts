@@ -210,6 +210,7 @@ export const frFR = {
     transformations: "Transformations",
     transformation: "Transformation",
     settings: "Paramètres",
+    integrations: "Intégrations",
     advanced: "Avancé",
     nav: "Navigation",
     language: "Changer de langue",

@@ -210,6 +210,7 @@ export const zhTW = {
     transformations: "轉換",
     transformation: "轉換",
     settings: "設定",
+    integrations: "整合",
     advanced: "進階",
     nav: "導覽",
     language: "切換語言",
