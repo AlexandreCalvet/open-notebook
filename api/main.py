@@ -151,6 +151,7 @@ app.add_middleware(
         "/redoc",
         "/api/auth/status",
         "/api/config",
+        "/api/drive/callback",
     ],
 )
 
