@@ -30,7 +30,8 @@ COPY pyproject.toml uv.lock ./
 COPY open_notebook/__init__.py ./open_notebook/__init__.py
 
 # Install dependencies with optimizations (this layer will be cached unless dependencies change)
-RUN uv sync --frozen --no-dev
+# --extra google-drive installs the optional Google Drive integration dependencies
+RUN uv sync --frozen --no-dev --extra google-drive
 
 # Pre-download tiktoken encoding so the app works offline (issue #264).
 # /app/tiktoken-cache is intentionally outside /app/data/ so that volume mounts
