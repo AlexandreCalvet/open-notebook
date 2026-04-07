@@ -60,7 +60,7 @@ async def oauth_callback(code: str, state: Optional[str] = None):
     Handle the OAuth redirect from Google.
     Exchanges the authorization code for tokens and redirects back to the frontend.
     """
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:8502")
     try:
         result = await drive_service.exchange_code_for_tokens(code, state=state)
         return RedirectResponse(

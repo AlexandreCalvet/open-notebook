@@ -4,7 +4,6 @@ source ingestion pipeline. Reuses core domain models without duplicating logic.
 """
 import os
 from datetime import datetime, timezone
-from typing import Optional
 
 from loguru import logger
 
@@ -69,18 +68,22 @@ async def _process_file(file: dict, notebook_id: str) -> None:
     """
     Create or update a Source for a Drive file.
     Skips if the file's modifiedTime hasn't changed since last indexing.
+
+    drive_file_id and drive_modified_time are stored as top-level fields on
+    the source record (not inside asset) so they survive the source_graph
+    processing step, which overwrites asset with a plain Asset(url, file_path).
     """
     drive_file_id = file["id"]
     drive_modified_time = file["modifiedTime"]
 
     existing = await repo_query(
-        "SELECT * FROM source WHERE asset.drive_file_id = $fid LIMIT 1",
+        "SELECT * FROM source WHERE drive_file_id = $fid LIMIT 1",
         {"fid": drive_file_id},
     )
 
     if existing:
         source_data = existing[0]
-        existing_modified = (source_data.get("asset") or {}).get("drive_modified_time")
+        existing_modified = source_data.get("drive_modified_time")
         if existing_modified == drive_modified_time:
             logger.debug(f"Drive file {drive_file_id} unchanged, skipping")
             return
@@ -93,7 +96,9 @@ async def _process_file(file: dict, notebook_id: str) -> None:
 
 async def _reindex_source(source_data: dict, file: dict) -> None:
     """Re-download and re-index an existing source whose Drive file changed."""
+    import commands.source_commands  # noqa: F401 — must be imported to register the command
     from surreal_commands import submit_command
+    from commands.source_commands import SourceProcessingInput
 
     source_id = source_data["id"]
     file_path = await drive_service.download_file(
@@ -102,25 +107,30 @@ async def _reindex_source(source_data: dict, file: dict) -> None:
         mime_type=file["mimeType"],
     )
 
-    existing_asset = source_data.get("asset") or {}
-    updated_asset = {
-        **existing_asset,
-        "file_path": file_path,
+    # Update the file path in asset, and keep drive tracking fields at top level
+    # (drive_file_id / drive_modified_time are top-level so source_graph doesn't overwrite them)
+    await repo_upsert("source", source_id, {
+        "asset": {"file_path": file_path},
         "drive_file_id": file["id"],
         "drive_modified_time": file["modifiedTime"],
-    }
-    await repo_upsert("source", source_id, {"asset": updated_asset})
+    })
 
-    await submit_command(
-        "process_source",
-        {"source_id": source_id, "file_path": file_path, "embed": True},
+    command_input = SourceProcessingInput(
+        source_id=str(source_id),
+        content_state={"file_path": file_path, "delete_source": True},
+        notebook_ids=[],
+        transformations=[],
+        embed=True,
     )
+    submit_command("open_notebook", "process_source", command_input.model_dump())
     logger.info(f"Re-indexing triggered for source {source_id}")
 
 
 async def _create_source(file: dict, notebook_id: str) -> None:
     """Download a new Drive file and create a Source + notebook reference."""
+    import commands.source_commands  # noqa: F401 — must be imported to register the command
     from surreal_commands import submit_command
+    from commands.source_commands import SourceProcessingInput
 
     file_path = await drive_service.download_file(
         file_id=file["id"],
@@ -128,16 +138,15 @@ async def _create_source(file: dict, notebook_id: str) -> None:
         mime_type=file["mimeType"],
     )
 
-    asset_data = {
-        "file_path": file_path,
-        "drive_file_id": file["id"],
-        "drive_modified_time": file["modifiedTime"],
-    }
+    # drive_file_id and drive_modified_time are top-level fields (not inside asset)
+    # so source_graph processing does not overwrite them when it sets source.asset
     source_record = await repo_create(
         "source",
         {
             "title": file["name"],
-            "asset": asset_data,
+            "asset": {"file_path": file_path},
+            "drive_file_id": file["id"],
+            "drive_modified_time": file["modifiedTime"],
         },
     )
     source_id = source_record["id"]
@@ -148,10 +157,14 @@ async def _create_source(file: dict, notebook_id: str) -> None:
         ensure_record_id(notebook_id),
     )
 
-    await submit_command(
-        "process_source",
-        {"source_id": source_id, "file_path": file_path, "embed": True},
+    command_input = SourceProcessingInput(
+        source_id=str(source_id),
+        content_state={"file_path": file_path, "delete_source": True},
+        notebook_ids=[notebook_id],
+        transformations=[],
+        embed=True,
     )
+    submit_command("open_notebook", "process_source", command_input.model_dump())
     logger.info(f"Created source {source_id} for Drive file '{file['name']}'")
 
 
