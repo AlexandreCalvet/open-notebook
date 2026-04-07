@@ -247,13 +247,6 @@ async def list_syncs(notebook_id: Optional[str] = Query(None)):
     return [DriveSyncResponse(**_normalize_sync(r)) for r in results]
 
 
-@router.delete("/sync/{sync_id}")
-async def delete_sync(sync_id: str):
-    """Remove a Drive sync configuration."""
-    await repo_delete(ensure_record_id(sync_id))
-    return {"message": "Sync configuration removed"}
-
-
 @router.delete("/sync/purge-all")
 async def purge_all_syncs():
     """Delete ALL drive_sync records. Use to clean up stale data."""
@@ -263,6 +256,13 @@ async def purge_all_syncs():
         await conn.query("DELETE drive_sync")
     logger.info("Purged all drive_sync records")
     return {"message": "All sync records purged"}
+
+
+@router.delete("/sync/{sync_id}")
+async def delete_sync(sync_id: str):
+    """Remove a Drive sync configuration."""
+    await repo_delete(ensure_record_id(sync_id))
+    return {"message": "Sync configuration removed"}
 
 
 @router.post("/sync/{sync_id}/trigger")
