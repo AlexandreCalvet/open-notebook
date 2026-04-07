@@ -6,23 +6,11 @@ export interface DriveStatus {
   user_email: string | null
 }
 
-export interface DriveItem {
-  id: string
-  name: string
-  mimeType: string
-  modifiedTime?: string
-  size?: string
-}
-
-export interface BrowseResponse {
-  items: DriveItem[]
-  parent_id: string
-  nextPageToken: string | null
-}
-
-export interface SearchResponse {
-  items: DriveItem[]
-  nextPageToken: string | null
+export interface PickerConfig {
+  access_token: string
+  api_key: string
+  client_id: string
+  app_id: string
 }
 
 export interface DriveSyncConfig {
@@ -43,7 +31,12 @@ export interface CreateDriveSyncRequest {
   poll_interval_minutes?: number
 }
 
-export const FOLDER_MIME = 'application/vnd.google-apps.folder'
+export interface ImportFileEntry {
+  id: string
+  name: string
+  mimeType: string
+  modifiedTime?: string
+}
 
 export const driveApi = {
   getStatus: async (): Promise<DriveStatus> => {
@@ -60,22 +53,16 @@ export const driveApi = {
     await apiClient.delete('/drive/disconnect')
   },
 
-  browse: async (parentId: string = 'root', pageToken?: string): Promise<BrowseResponse> => {
-    const params: Record<string, string> = { parent_id: parentId }
-    if (pageToken) params.page_token = pageToken
-    const res = await apiClient.get('/drive/browse', { params })
+  getPickerConfig: async (): Promise<PickerConfig> => {
+    const res = await apiClient.get('/drive/picker-config')
     return res.data
   },
 
-  search: async (query: string, pageToken?: string): Promise<SearchResponse> => {
-    const params: Record<string, string> = { q: query }
-    if (pageToken) params.page_token = pageToken
-    const res = await apiClient.get('/drive/search', { params })
-    return res.data
-  },
-
-  listSharedDrives: async (): Promise<{ drives: DriveItem[] }> => {
-    const res = await apiClient.get('/drive/shared-drives')
+  importFiles: async (notebookId: string, files: ImportFileEntry[]): Promise<any> => {
+    const res = await apiClient.post('/drive/import-files', {
+      notebook_id: notebookId,
+      files,
+    })
     return res.data
   },
 
