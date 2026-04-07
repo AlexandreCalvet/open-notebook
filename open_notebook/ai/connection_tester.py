@@ -21,7 +21,7 @@ from open_notebook.domain.credential import Credential
 TEST_MODELS = {
     "openai": ("gpt-3.5-turbo", "language"),
     "anthropic": ("claude-3-haiku-20240307", "language"),
-    "google": ("gemini-2.0-flash", "language"),
+    "google": ("gemini-3.1-flash-lite-preview", "language"),
     "groq": ("llama-3.1-8b-instant", "language"),
     "mistral": ("mistral-small-latest", "language"),
     "deepseek": ("deepseek-chat", "language"),
@@ -31,7 +31,7 @@ TEST_MODELS = {
     "elevenlabs": ("eleven_multilingual_v2", "text_to_speech"),
     "ollama": (None, "language"),  # Dynamic - will use first available model
     # Complex providers with additional configuration
-    "vertex": ("gemini-2.0-flash", "language"),  # Uses Google Vertex AI
+    "vertex": ("gemini-3.1-flash-lite-preview", "language"),  # Uses Google Vertex AI
     "azure": ("gpt-35-turbo", "language"),  # Azure OpenAI deployment name
     "openai_compatible": (None, "language"),  # Dynamic - will use first available model
     "dashscope": ("qwen-plus", "language"),
