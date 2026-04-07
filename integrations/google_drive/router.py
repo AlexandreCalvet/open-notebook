@@ -62,7 +62,7 @@ async def oauth_callback(code: str, state: Optional[str] = None):
     """
     frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     try:
-        result = await drive_service.exchange_code_for_tokens(code)
+        result = await drive_service.exchange_code_for_tokens(code, state=state)
         return RedirectResponse(
             url=(
                 f"{frontend_url}/settings/integrations"
