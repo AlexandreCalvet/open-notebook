@@ -16,6 +16,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from loguru import logger
 
 from open_notebook.database.repository import (
+    ensure_record_id,
     repo_create,
     repo_query,
     repo_upsert,
@@ -142,7 +143,7 @@ async def exchange_code_for_tokens(code: str, state: Optional[str] = None) -> Di
     # Cleanup legacy duplicates from previous implementations.
     await repo_query(
         "DELETE drive_credential WHERE id != $id",
-        {"id": PRIMARY_CREDENTIAL_ID},
+        {"id": ensure_record_id(PRIMARY_CREDENTIAL_ID)},
     )
 
     return {"user_email": user_email}
@@ -150,7 +151,10 @@ async def exchange_code_for_tokens(code: str, state: Optional[str] = None) -> Di
 
 async def get_credential() -> Optional[Dict[str, Any]]:
     """Return the stored Drive credential record, or None if not connected."""
-    primary = await repo_query("SELECT * FROM $id LIMIT 1", {"id": PRIMARY_CREDENTIAL_ID})
+    primary = await repo_query(
+        "SELECT * FROM $id LIMIT 1",
+        {"id": ensure_record_id(PRIMARY_CREDENTIAL_ID)},
+    )
     if primary:
         return primary[0]
 
