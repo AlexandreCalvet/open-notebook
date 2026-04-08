@@ -31,6 +31,7 @@ SCOPES = [
 # Needed because the auth URL and the token exchange use separate Flow instances.
 # Single-instance only — for multi-instance deployments, use Redis instead.
 _pkce_store: Dict[str, str] = {}
+PRIMARY_CREDENTIAL_ID = "drive_credential:google_drive_primary"
 
 # Supported MIME types for indexing
 SUPPORTED_MIME_TYPES = {
@@ -136,17 +137,27 @@ async def exchange_code_for_tokens(code: str, state: Optional[str] = None) -> Di
         "connected_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    if existing_cred:
-        await repo_upsert("drive_credential", existing_cred["id"], token_data)
-    else:
-        await repo_create("drive_credential", token_data)
+    # Keep one stable credential record to avoid non-deterministic LIMIT 1 reads.
+    await repo_upsert("drive_credential", PRIMARY_CREDENTIAL_ID, token_data)
+    # Cleanup legacy duplicates from previous implementations.
+    await repo_query(
+        "DELETE drive_credential WHERE id != $id",
+        {"id": PRIMARY_CREDENTIAL_ID},
+    )
 
     return {"user_email": user_email}
 
 
 async def get_credential() -> Optional[Dict[str, Any]]:
     """Return the stored Drive credential record, or None if not connected."""
-    results = await repo_query("SELECT * FROM drive_credential LIMIT 1")
+    primary = await repo_query("SELECT * FROM $id LIMIT 1", {"id": PRIMARY_CREDENTIAL_ID})
+    if primary:
+        return primary[0]
+
+    # Backward-compatible fallback for environments with legacy rows.
+    results = await repo_query(
+        "SELECT * FROM drive_credential ORDER BY connected_at DESC, updated DESC LIMIT 1"
+    )
     return results[0] if results else None
 
 
