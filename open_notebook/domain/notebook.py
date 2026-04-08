@@ -662,76 +662,74 @@ async def vector_search_in_notebook(
 
         embed = await generate_embedding(keyword)
         nb_record = ensure_record_id(notebook_id)
-        search_results = await repo_query(
+        params = {
+            "embed": embed,
+            "results": results,
+            "notebook_id": nb_record,
+            "minimum_score": minimum_score,
+        }
+
+        source_chunks = await repo_query(
             """
-            LET $source_embedding_search = (
-                SELECT
-                    source.id as id,
-                    source.title as title,
-                    content,
-                    source.id as parent_id,
-                    vector::similarity::cosine(embedding, $embed) as similarity
-                FROM source_embedding
-                WHERE embedding != none
-                  AND array::len(embedding) = array::len($embed)
-                  AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
-                  AND source IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)
-                ORDER BY similarity DESC
-                LIMIT $results
-            );
-
-            LET $source_insight_search = (
-                SELECT
-                    id,
-                    insight_type + ' - ' + (source.title OR '') as title,
-                    content,
-                    source.id as parent_id,
-                    vector::similarity::cosine(embedding, $embed) as similarity
-                FROM source_insight
-                WHERE embedding != none
-                  AND array::len(embedding) = array::len($embed)
-                  AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
-                  AND source IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)
-                ORDER BY similarity DESC
-                LIMIT $results
-            );
-
-            LET $note_search = (
-                SELECT
-                    id,
-                    title,
-                    content,
-                    id as parent_id,
-                    vector::similarity::cosine(embedding, $embed) as similarity
-                FROM note
-                WHERE embedding != none
-                  AND array::len(embedding) = array::len($embed)
-                  AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
-                  AND id IN (SELECT VALUE in FROM artifact WHERE out = $notebook_id)
-                ORDER BY similarity DESC
-                LIMIT $results
-            );
-
-            LET $all = array::union(array::union($source_embedding_search, $source_insight_search), $note_search);
-
-            RETURN (
-                SELECT id, parent_id, title, math::max(similarity) as similarity,
-                       array::flatten(content) as matches
-                FROM $all
-                WHERE id IS NOT NONE
-                GROUP BY id, parent_id, title
-                ORDER BY similarity DESC
-                LIMIT $results
-            );
+            SELECT
+                source.id as id,
+                source.title as title,
+                content,
+                source.id as parent_id,
+                vector::similarity::cosine(embedding, $embed) as similarity
+            FROM source_embedding
+            WHERE embedding != none
+              AND array::len(embedding) = array::len($embed)
+              AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
+              AND source IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)
+            ORDER BY similarity DESC
+            LIMIT $results
             """,
-            {
-                "embed": embed,
-                "results": results,
-                "notebook_id": nb_record,
-                "minimum_score": minimum_score,
-            },
+            params,
         )
-        return search_results
+
+        source_insights = await repo_query(
+            """
+            SELECT
+                id,
+                string::concat(insight_type, ' - ', source.title) as title,
+                content,
+                source.id as parent_id,
+                vector::similarity::cosine(embedding, $embed) as similarity
+            FROM source_insight
+            WHERE embedding != none
+              AND array::len(embedding) = array::len($embed)
+              AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
+              AND source IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)
+            ORDER BY similarity DESC
+            LIMIT $results
+            """,
+            params,
+        )
+
+        notes = await repo_query(
+            """
+            SELECT
+                id,
+                title,
+                content,
+                id as parent_id,
+                vector::similarity::cosine(embedding, $embed) as similarity
+            FROM note
+            WHERE embedding != none
+              AND array::len(embedding) = array::len($embed)
+              AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
+              AND id IN (SELECT VALUE in FROM artifact WHERE out = $notebook_id)
+            ORDER BY similarity DESC
+            LIMIT $results
+            """,
+            params,
+        )
+
+        all_results = (source_chunks or []) + (source_insights or []) + (notes or [])
+        all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+        return all_results[:results]
+
     except Exception as e:
         logger.error(f"Error performing notebook vector search: {str(e)}")
         logger.exception(e)
