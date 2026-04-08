@@ -131,7 +131,10 @@ async def get_picker_config():
     if not cred:
         raise HTTPException(status_code=400, detail="Not connected to Google Drive")
 
-    token = await drive_service.get_fresh_access_token()
+    try:
+        token = await drive_service.get_fresh_access_token()
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     if not token:
         raise HTTPException(status_code=400, detail="Unable to obtain access token")
 

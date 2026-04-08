@@ -33,7 +33,19 @@ function loadPicker(): Promise<void> {
 
 export function useGooglePicker() {
   const openPicker = useCallback(async (onPicked: OnPicked) => {
-    const config = await driveApi.getPickerConfig()
+    let config
+    try {
+      config = await driveApi.getPickerConfig()
+    } catch (error: any) {
+      const status = error?.response?.status
+      const detail = error?.response?.data?.detail || ''
+      if (status === 401 || String(detail).toLowerCase().includes('reconnect required')) {
+        const { url } = await driveApi.getAuthUrl()
+        window.location.href = url
+        return
+      }
+      throw error
+    }
 
     await loadScript(PICKER_SCRIPT)
     await loadPicker()

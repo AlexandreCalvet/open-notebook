@@ -116,20 +116,28 @@ async def exchange_code_for_tokens(code: str, state: Optional[str] = None) -> Di
     user_info = service.userinfo().get().execute()
     user_email = user_info["email"]
 
-    token_data = {
-        "user_email": user_email,
-        "access_token": creds.token,
-        "refresh_token": creds.refresh_token,
-        "expires_at": creds.expiry.isoformat() if creds.expiry else None,
-        "connected_at": datetime.now(timezone.utc).isoformat(),
-    }
-
     existing = await repo_query(
         "SELECT * FROM drive_credential WHERE user_email = $email LIMIT 1",
         {"email": user_email},
     )
-    if existing:
-        await repo_upsert("drive_credential", existing[0]["id"], token_data)
+    existing_cred = existing[0] if existing else None
+
+    # Google may omit refresh_token on subsequent grants. Never overwrite a
+    # valid stored refresh_token with None, otherwise automatic refresh breaks.
+    refresh_token = creds.refresh_token or (
+        existing_cred.get("refresh_token") if existing_cred else None
+    )
+
+    token_data = {
+        "user_email": user_email,
+        "access_token": creds.token,
+        "refresh_token": refresh_token,
+        "expires_at": creds.expiry.isoformat() if creds.expiry else None,
+        "connected_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if existing_cred:
+        await repo_upsert("drive_credential", existing_cred["id"], token_data)
     else:
         await repo_create("drive_credential", token_data)
 
@@ -157,18 +165,24 @@ def _refresh_credentials(cred_data: Dict[str, Any]) -> Credentials:
         client_secret=os.environ["GOOGLE_DRIVE_CLIENT_SECRET"],
         token_uri="https://oauth2.googleapis.com/token",
     )
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        asyncio.create_task(
-            repo_upsert(
-                "drive_credential",
-                cred_data["id"],
-                {
-                    "access_token": creds.token,
-                    "expires_at": creds.expiry.isoformat() if creds.expiry else None,
-                },
+    if creds.expired:
+        if not creds.refresh_token:
+            raise ValueError("Google Drive session expired and cannot be refreshed. Reconnect required.")
+        try:
+            creds.refresh(Request())
+            asyncio.create_task(
+                repo_upsert(
+                    "drive_credential",
+                    cred_data["id"],
+                    {
+                        "access_token": creds.token,
+                        "expires_at": creds.expiry.isoformat() if creds.expiry else None,
+                    },
+                )
             )
-        )
+        except Exception as e:
+            logger.warning(f"Google Drive token refresh failed: {e}")
+            raise ValueError("Google Drive refresh token is invalid or revoked. Reconnect required.")
     return creds
 
 
