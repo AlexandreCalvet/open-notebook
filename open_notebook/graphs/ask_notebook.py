@@ -102,7 +102,7 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
             system_prompt,
             config.get("configurable", {}).get("answer_model"),
             "tools",
-            max_tokens=2000,
+            max_tokens=4096,
         )
         ai_message = await model.ainvoke(system_prompt)
         ai_content = extract_text_content(ai_message.content)
@@ -121,7 +121,7 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
             system_prompt,
             config.get("configurable", {}).get("final_answer_model"),
             "tools",
-            max_tokens=2000,
+            max_tokens=8192,
         )
         ai_message = await model.ainvoke(system_prompt)
         final_content = extract_text_content(ai_message.content)
