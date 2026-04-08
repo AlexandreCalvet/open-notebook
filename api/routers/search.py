@@ -5,11 +5,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
+from api.models import AskNotebookRequest, AskRequest, AskResponse, SearchRequest, SearchResponse
 from open_notebook.ai.models import Model, model_manager
 from open_notebook.domain.notebook import text_search, vector_search
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
 from open_notebook.graphs.ask import graph as ask_graph
+from open_notebook.graphs.ask_notebook import graph as ask_notebook_graph
 
 router = APIRouter()
 
@@ -214,4 +215,62 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
         raise
     except Exception as e:
         logger.error(f"Error in ask simple endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")
+
+
+@router.post("/search/ask/notebook", response_model=AskResponse)
+async def ask_notebook(ask_request: AskNotebookRequest):
+    """Ask a question scoped to a specific notebook using RAG (vector search filtered by notebook)."""
+    try:
+        strategy_model = await Model.get(ask_request.strategy_model)
+        answer_model = await Model.get(ask_request.answer_model)
+        final_answer_model = await Model.get(ask_request.final_answer_model)
+
+        if not strategy_model:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Strategy model {ask_request.strategy_model} not found",
+            )
+        if not answer_model:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Answer model {ask_request.answer_model} not found",
+            )
+        if not final_answer_model:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Final answer model {ask_request.final_answer_model} not found",
+            )
+
+        if not await model_manager.get_embedding_model():
+            raise HTTPException(
+                status_code=400,
+                detail="Ask feature requires an embedding model. Please configure one in the Models section.",
+            )
+
+        final_answer = None
+        async for chunk in ask_notebook_graph.astream(
+            input=dict(question=ask_request.question),  # type: ignore[arg-type]
+            config=dict(
+                configurable=dict(
+                    notebook_id=ask_request.notebook_id,
+                    strategy_model=strategy_model.id,
+                    answer_model=answer_model.id,
+                    final_answer_model=final_answer_model.id,
+                )
+            ),
+            stream_mode="updates",
+        ):
+            if "write_final_answer" in chunk:
+                final_answer = chunk["write_final_answer"]["final_answer"]
+
+        if not final_answer:
+            raise HTTPException(status_code=500, detail="No answer generated")
+
+        return AskResponse(answer=final_answer, question=ask_request.question)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in ask notebook endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")

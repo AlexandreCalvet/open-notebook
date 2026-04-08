@@ -64,7 +64,9 @@ Instead of memorizing endpoints, use the interactive API docs:
 
 **Search** - Find content by text or semantic similarity
 - `POST /search` - Full-text or vector search
-- `POST /ask` - Ask a question (search + synthesize)
+- `POST /search/ask` - Ask a question across all notebooks (search + synthesize, streaming SSE)
+- `POST /search/ask/simple` - Ask a question across all notebooks (search + synthesize, JSON response)
+- `POST /search/ask/notebook` - Ask a question scoped to a specific notebook (RAG filtered by notebook_id)
 
 **Transformations** - Custom prompts for extracting insights
 - `GET/POST /transformations` - Create custom extraction rules

@@ -58,6 +58,14 @@ class AskResponse(BaseModel):
     question: str = Field(..., description="Original question")
 
 
+class AskNotebookRequest(BaseModel):
+    question: str = Field(..., description="Question to ask the knowledge base")
+    notebook_id: str = Field(..., description="Notebook ID to scope the search to")
+    strategy_model: str = Field(..., description="Model ID for query strategy")
+    answer_model: str = Field(..., description="Model ID for individual answers")
+    final_answer_model: str = Field(..., description="Model ID for final answer")
+
+
 # Models API models
 class ModelCreate(BaseModel):
     name: str = Field(..., description="Model name (e.g., gpt-5-mini, claude, gemini)")

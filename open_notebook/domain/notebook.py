@@ -647,6 +647,97 @@ async def text_search(
         raise DatabaseOperationError(e)
 
 
+async def vector_search_in_notebook(
+    keyword: str,
+    results: int,
+    notebook_id: str,
+    minimum_score=0.2,
+):
+    if not keyword:
+        raise InvalidInputError("Search keyword cannot be empty")
+    if not notebook_id:
+        raise InvalidInputError("Notebook ID cannot be empty")
+    try:
+        from open_notebook.utils.embedding import generate_embedding
+
+        embed = await generate_embedding(keyword)
+        nb_record = ensure_record_id(notebook_id)
+        search_results = await repo_query(
+            """
+            LET $source_embedding_search = (
+                SELECT
+                    source.id as id,
+                    source.title as title,
+                    content,
+                    source.id as parent_id,
+                    vector::similarity::cosine(embedding, $embed) as similarity
+                FROM source_embedding
+                WHERE embedding != none
+                  AND array::len(embedding) = array::len($embed)
+                  AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
+                  AND source IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)
+                ORDER BY similarity DESC
+                LIMIT $results
+            );
+
+            LET $source_insight_search = (
+                SELECT
+                    id,
+                    insight_type + ' - ' + (source.title OR '') as title,
+                    content,
+                    source.id as parent_id,
+                    vector::similarity::cosine(embedding, $embed) as similarity
+                FROM source_insight
+                WHERE embedding != none
+                  AND array::len(embedding) = array::len($embed)
+                  AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
+                  AND source IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)
+                ORDER BY similarity DESC
+                LIMIT $results
+            );
+
+            LET $note_search = (
+                SELECT
+                    id,
+                    title,
+                    content,
+                    id as parent_id,
+                    vector::similarity::cosine(embedding, $embed) as similarity
+                FROM note
+                WHERE embedding != none
+                  AND array::len(embedding) = array::len($embed)
+                  AND vector::similarity::cosine(embedding, $embed) >= $minimum_score
+                  AND id IN (SELECT VALUE in FROM artifact WHERE out = $notebook_id)
+                ORDER BY similarity DESC
+                LIMIT $results
+            );
+
+            LET $all = array::union(array::union($source_embedding_search, $source_insight_search), $note_search);
+
+            RETURN (
+                SELECT id, parent_id, title, math::max(similarity) as similarity,
+                       array::flatten(content) as matches
+                FROM $all
+                WHERE id IS NOT NONE
+                GROUP BY id, parent_id, title
+                ORDER BY similarity DESC
+                LIMIT $results
+            );
+            """,
+            {
+                "embed": embed,
+                "results": results,
+                "notebook_id": nb_record,
+                "minimum_score": minimum_score,
+            },
+        )
+        return search_results
+    except Exception as e:
+        logger.error(f"Error performing notebook vector search: {str(e)}")
+        logger.exception(e)
+        raise DatabaseOperationError(e)
+
+
 async def vector_search(
     keyword: str,
     results: int,
