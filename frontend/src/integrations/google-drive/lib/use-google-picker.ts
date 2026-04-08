@@ -67,6 +67,7 @@ export function useGooglePicker() {
       .setOAuthToken(config.access_token)
       .setDeveloperKey(config.api_key)
       .setAppId(config.app_id)
+      .setOrigin(config.origin || window.location.origin)
       .setCallback((data: any) => {
         if (data[google.picker.Response.ACTION] === google.picker.Action.PICKED) {
           const items: PickerResult[] = (data[google.picker.Response.DOCUMENTS] || []).map((d: any) => ({
